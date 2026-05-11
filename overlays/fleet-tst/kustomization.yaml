@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patchesStrategicMerge: []
+
+# Generate the specific secrets that need to go into the cluster for this deployment
+secretGenerator:
+  # Root Password Secret
+  - name: mysql-root-password
+    literals:
+      - rootPassword=SuperSecretRoot123!ChangeThisInProduction
+    options:
+      disableNameSuffix: true
+      
+  # User Password Secret (Can be same or different)
+  - name: mysql-user-password
+    literals:
+      - userPassword=SuperSecureUserPass456!
+    options:
+      disableNameSuffix: true
