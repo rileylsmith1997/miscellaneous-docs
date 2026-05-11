@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql-fleet-tst
+spec:
+  serviceName: mysql-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql-fleet-tst
+  template:
+    metadata:
+      labels:
+        app: mysql-fleet-tst
+      annotations:
+        checksum/init-config: "{{ .Files.Get 'data.sql' | sha256sum }}" # Verify init script change
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:8.0
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          runAsUser: 999
+          fsGroup: 1000
+          readOnlyRootFilesystem: true # Best practice for MySQL in K8s
+        ports:
+        - name: mysql
+          containerPort: 3306
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-root-password # Injected by overlay
+        - name: MYSQL_DATABASE
+          value: fleet_tst # DB already created in init script, this is optional but kept for backward compat
+        - name: MYSQL_USER
+          value: fleet-svc
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-user-password # Injected by overlay
+        # Mount the Init Script (using ConfigMap)
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/mysql
+          subPath: data
+        volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mysql-pvc-fleet-tst
+        # Mount Init Script (The init container is not needed if we use env vars, 
+        # but to ensure the script runs reliably regardless of image version changes, 
+        # we mount it as a file. Official MySQL images look for /docker-entrypoint-initdb.d)
+        - name: init-config
+          configMap:
+            name: mysql-init
+            defaultMode: 0755
+---
+# We also need to generate the PVC in Kustomize logic if storageClass is dynamic
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-pvc-fleet-tst
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi # Adjust based on your needs
